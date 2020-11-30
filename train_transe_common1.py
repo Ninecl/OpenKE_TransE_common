@@ -21,10 +21,11 @@ DIM = 100	# 维度数
 PNORM = 1	# 范数
 MARGIN = 1.0	# transe距离转移margin
 LEARNING_RATE = 0.005	# 学习率
-EPOCH = 1	# 训练次数
+EPOCH = 1000	# 训练次数
 NBATCH = 100	# 分多少个batch
 NEG_ENT = 1	# 每个实体负采样数
-
+print("Parameter setting:\ndim: {}, p_norm: {}, margin: {}, learning_rate: {}, nbatch: {}, neg_ent: {}".format(
+    DIM, PNORM, MARGIN, LEARNING_RATE, NBATCH, NEG_ENT))
 
 # dataloader for training
 train_dataloader = TrainDataLoader(
