@@ -5,7 +5,7 @@ from .Model import Model
 
 class TransE_with_feature(Model):
 
-	def __init__(self, ent_tot, rel_tot, entities_feature, common_head_embeddings, common_tail_embeddings, 
+	def __init__(self, ent_tot, rel_tot, entities_feature, common_head_embeddings, common_tail_embeddings, entities_feature_embedding,
               dim = 100, p_norm = 1, norm_flag = True, margin = None, epsilon = None):
 		super(TransE_with_feature, self).__init__(ent_tot, rel_tot)
 		
@@ -17,12 +17,11 @@ class TransE_with_feature(Model):
 		self.common_head_embeddings = common_head_embeddings
 		self.common_tail_embeddings = common_tail_embeddings
 		self.entities_feature = entities_feature
-		self.entities_feature_weight = self.caculate_feature_weight()
 
 		self.ent_embeddings = nn.Embedding(self.ent_tot, self.dim)
 		self.rel_embeddings = nn.Embedding(self.rel_tot, self.dim)
 
-		self.ent_embeddings.weight.data = self.pool_feature()
+		self.ent_embeddings.weight.data = entities_feature_embedding
 		self.rel_embeddings.weight.data = self.common_tail_embeddings - self.common_head_embeddings
 
 		if margin != None:
@@ -31,27 +30,7 @@ class TransE_with_feature(Model):
 			self.margin_flag = True
 		else:
 			self.margin_flag = False
-
-
-	def caculate_feature_weight(self):
-		entities_feature_weight = self.entities_feature.float()
-		for i in range(len(entities_feature_weight)):
-			if entities_feature_weight[i].sum() != 0:
-				entities_feature_weight[i] = entities_feature_weight[i] / entities_feature_weight[i].sum()
-		return entities_feature_weight
-
-
-	def pool_feature(self):
-		e_f = self.entities_feature_weight.permute(1, 0, 2).cuda()
-		e_h_f = e_f[0].view(e_f[0].shape[0], self.rel_tot, 1)
-		e_t_f = e_f[1].view(e_f[1].shape[0], self.rel_tot, 1)
-		# e_f_emb = torch.cat((e_h_f * self.common_head_embeddings.weight, 
-		# 				e_t_f * self.common_tail_embeddings.weight), 1).sum(dim=1)
-		e_h_f_emb = (e_h_f * self.common_head_embeddings).sum(dim=1)
-		e_t_f_emb = (e_t_f * self.common_tail_embeddings).sum(dim=1)
-		e_f_emb = e_h_f_emb + e_t_f_emb
-		return e_f_emb
-
+   
 
 	def _calc(self, h, t, r, mode):
 		if self.norm_flag:
@@ -69,6 +48,7 @@ class TransE_with_feature(Model):
 		score = torch.norm(score, self.p_norm, -1).flatten()
 		return score
 
+
 	def forward(self, data):
 		batch_h = data['batch_h']
 		batch_t = data['batch_t']
@@ -83,6 +63,7 @@ class TransE_with_feature(Model):
 		else:
 			return score
 
+
 	def regularization(self, data):
 		batch_h = data['batch_h']
 		batch_t = data['batch_t']
@@ -94,6 +75,7 @@ class TransE_with_feature(Model):
 				 torch.mean(t ** 2) + 
 				 torch.mean(r ** 2)) / 3
 		return regul
+
 
 	def predict(self, data):
 		score = self.forward(data)

@@ -56,18 +56,19 @@ class TransE_common1(Model):
 		else:
 			self.margin_flag = False
 
+
 	def caculate_feature_weight(self):
 		entities_feature_weight = self.entities_feature.float()
 		for i in range(len(entities_feature_weight)):
 			if entities_feature_weight[i].sum() != 0:
 				entities_feature_weight[i] = entities_feature_weight[i] / entities_feature_weight[i].sum()
-		return entities_feature_weight
-			
-	def pool_feature(self, batch_e):
-		batch_size = batch_e.size()[0]
-		e_f = self.entities_feature_weight[batch_e.long()].permute(1, 0, 2).cuda()
-		e_h_f = e_f[0].view(batch_size, self.rel_tot, 1)
-		e_t_f = e_f[1].view(batch_size, self.rel_tot, 1)
+		return entities_feature_weight.cuda()
+
+
+	def pool_feature(self):
+		e_f = self.entities_feature_weight.permute(1, 0, 2)
+		e_h_f = e_f[0].view(self.ent_tot, self.rel_tot, 1)
+		e_t_f = e_f[1].view(self.ent_tot, self.rel_tot, 1)
 		# e_f_emb = torch.cat((e_h_f * self.common_head_embeddings.weight, 
 		# 				e_t_f * self.common_tail_embeddings.weight), 1).sum(dim=1)
 		e_h_f_emb = (e_h_f * self.common_head_embeddings.weight).sum(dim=1)
@@ -75,7 +76,10 @@ class TransE_common1(Model):
 		e_f_emb = e_h_f_emb + e_t_f_emb
 		return e_f_emb
 
+
 	def _calc(self, h, t, c_r_h, c_r_t, pf_h, pf_t, mode):
+		score2 = torch.zeros([0])
+		score3 = torch.zeros([0])
 		if self.norm_flag:
 			h = F.normalize(h, 2, -1)
 			t = F.normalize(t, 2, -1)
@@ -91,21 +95,20 @@ class TransE_common1(Model):
 
 		if mode == 'head_batch':
 			score1 = h + (c_r_t - c_r_h - t)
-			score2 = torch.zeros([0])
-			score3 = torch.zeros([0])
 		elif mode == 'tail_batch':
-			score1 = (h + c_r_t - c_r_h) - t
-			score2 = torch.zeros([0])
-			score3 = torch.zeros([0])
+			score1 = (t + c_r_h - c_r_t) - h
 		else:
-			score1 = (h + c_r_t - c_r_h) - t
+			score1_hrt = h + (c_r_t - c_r_h) - t
+			score1_trh = t + (c_r_h - c_r_t) - h
+			score1 = torch.cat((score1_hrt, score1_trh), dim=0)
 			score2 = h - pf_h
 			score3 = t - pf_t
 
 		score1 = torch.norm(score1, self.p_norm, -1).flatten()
-		score2 = torch.norm(score2, self.p_norm, -1).flatten()
-		score3 = torch.norm(score3, self.p_norm, -1).flatten()
+		score2 = torch.norm(score2, 2, -1).flatten()
+		score3 = torch.norm(score3, 2, -1).flatten()
 		return score1, torch.cat((score2, score3), dim=0)
+
 
 	def forward(self, data):
 		batch_h = data['batch_h']
@@ -116,18 +119,18 @@ class TransE_common1(Model):
 		t = self.ent_embeddings(batch_t)
 		c_r_h = self.common_head_embeddings(batch_r)
 		c_r_t = self.common_tail_embeddings(batch_r)
+		pf_h = torch.zeros([0])
+		pf_t = torch.zeros([0])
 		if mode == 'normal':
-			pf_h = self.pool_feature(batch_h)
-			pf_t = self.pool_feature(batch_t)
-   
-		else:
-			pf_h = torch.zeros([0])
-			pf_t = torch.zeros([0])
+			entities_feature_embedding = self.pool_feature()
+			pf_h = entities_feature_embedding[batch_h]
+			pf_t = entities_feature_embedding[batch_t]
 		score_trans, score_feature = self._calc(h, t, c_r_h, c_r_t, pf_h, pf_t, mode)
 		if self.margin_flag:
 			return self.margin - score_trans, score_feature
 		else:
 			return score_trans, score_feature
+
 
 	def regularization(self, data):
 		batch_h = data['batch_h']
@@ -140,6 +143,7 @@ class TransE_common1(Model):
 				 torch.mean(t ** 2) + 
 				 torch.mean(r ** 2)) / 3
 		return regul
+
 
 	def predict(self, data):
 		score_trans, score_feature = self.forward(data)

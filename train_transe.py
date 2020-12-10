@@ -1,11 +1,11 @@
 import time
 import openke
-import n
+import numpy as np
 from openke.config import Trainer, Tester
 from openke.module.model import TransE
 from openke.module.loss import MarginLoss
 from openke.module.strategy import NegativeSampling
-from openke.module.strategy import Feature
+from openke.module.tool import Feature
 from openke.module.tool import Tools
 from openke.data import TrainDataLoader, TestDataLoader
 
@@ -13,19 +13,24 @@ from openke.data import TrainDataLoader, TestDataLoader
 MODEL = 'transe'
 CHECK_TIME = time.strftime("%Y%m%d%H%M")
 MODEL_NAME = "{}_{}".format(MODEL, CHECK_TIME)
-DATASET = "./benchmarks/FB15K237/"	# 数据集
-DIM = 50	# 维度数
+DATASET = "FB15K237"	# 数据集
+DATAPATH = "./benchmarks/{}/".format(DATASET)	# 数据集路径
+DIM = 200	# 维度数
 PNORM = 1	# 范数
-MARGIN = 1.0	# transe距离转移margin
-LEARNING_RATE = 0.005	# 学习率
-EPOCH = 1	# 训练次数
-NBATCH = 100	# 分多少个batch
-NEG_ENT = 2	# 每个实体负采样数
+MARGIN = 5.0	# transe距离转移margin
+LEARNING_RATE = 1.0	# 学习率
+EPOCH = 1000	# 训练次数
+NBATCH = 100	# batch_size大小
+NEG_ENT = 25	# 每个实体负采样数
+
+
+# parameters to screen
+Tools.print_train_parameters(MODEL_NAME, DIM, PNORM, MARGIN, LEARNING_RATE, NBATCH, NEG_ENT)
 
 
 # dataloader for training
 train_dataloader = TrainDataLoader(
-	in_path = DATASET, 
+	in_path = DATAPATH, 
 	nbatches = NBATCH,
 	threads = 8, 
 	sampling_mode = "normal", 
@@ -35,7 +40,7 @@ train_dataloader = TrainDataLoader(
 	neg_rel = 0)
 
 # dataloader for test
-test_dataloader = TestDataLoader(DATASET, "link")
+test_dataloader = TestDataLoader(DATAPATH, "link")
 
 # define the model
 transe = TransE(
@@ -60,7 +65,7 @@ transe.save_checkpoint('./checkpoint/{}/{}.ckpt'.format(MODEL, MODEL_NAME))
 
 
 # draw the loss picture
-Tools.draw(np.arange(0, EPOCH), trainer.loss_history, "Loss history", "Epoch", "Loss", 
+Tools.draw(np.arange(0, EPOCH), trainer.loss_history, MODEL_NAME, DATASET, 
           "./checkpoint/{}/{}.png".format(MODEL, MODEL_NAME))
 
 
@@ -70,8 +75,13 @@ tester = Tester(model = transe, data_loader = test_dataloader, use_gpu = True)
 mrr, mr, hit10, hit3, hit1 = tester.run_link_prediction(type_constrain = False)
 
 
+# draw the loss picture
+Tools.draw(np.arange(0, EPOCH), trainer.loss_history, MODEL_NAME, DATASET, 
+          "./checkpoint/{}/{}.png".format(MODEL, MODEL_NAME))
+
+
 # record the train and test data
-f_record = open('./checkpoint/{}/records.txt'.format(MODEL), 'a')
+record_path = './checkpoint/{}/records.txt'.format(MODEL)
 train_record = {
 	"model_name": "{}.ckpt".format(MODEL_NAME), 
 	"dim": "{}".format(DIM), 
@@ -83,12 +93,11 @@ train_record = {
 	"margin": "{}".format(MARGIN), 
 	"date_set": "{}".format(DATASET)
 }
-f_record.write("===================================================================\n")
-for key, value in train_record.items():
-    f_record.write("{}: {}\n".format(key, value))
-f_record.write("-------------------------------------------------------------------\n")
-f_record.write("test result(fliter):\n")
-f_record.write("mrr: {}, mr: {}, hit10:{}, hit3:{}, hit1:{}\n".format(mrr, mr, hit10, hit3, hit1))
-f_record.write("===================================================================")
-f_record.write("\n\n")
-f_record.close()
+test_record = {
+    "MRR": mrr, 
+    "MR": mr, 
+    "Hit10": hit10,
+    "Hit3": hit3, 
+    "Hit1": hit1
+}
+Tools.write_record(train_record, test_record, record_path)

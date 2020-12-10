@@ -8,7 +8,7 @@ from openke.module.model import TransE_with_feature
 from openke.module.loss import MarginLoss
 from openke.module.strategy import NegativeSampling
 from openke.module.strategy import NegativeSampling_common
-from openke.module.strategy import Feature
+from openke.module.tool import Feature
 from openke.module.tool import Tools
 from openke.data import TrainDataLoader, TestDataLoader
 
@@ -16,20 +16,24 @@ from openke.data import TrainDataLoader, TestDataLoader
 MODEL = 'transe_common1'
 CHECK_TIME = time.strftime("%Y%m%d%H%M")
 MODEL_NAME = "{}_{}".format(MODEL, CHECK_TIME)
-DATASET = "./benchmarks/FB15K237/"	# 数据集
-DIM = 100	# 维度数
+DATASET = "FB15K237"	# 数据集
+DATAPATH = "./benchmarks/{}/".format(DATASET)	# 数据集路径
+DIM = 200	# 维度数
 PNORM = 1	# 范数
-MARGIN = 1.0	# transe距离转移margin
-LEARNING_RATE = 0.005	# 学习率
+MARGIN = 2.0	# transe距离转移margin
+LEARNING_RATE = 0.05	# 学习率
 EPOCH = 1000	# 训练次数
-NBATCH = 100	# 分多少个batch
-NEG_ENT = 1	# 每个实体负采样数
-print("Parameter setting:\ndim: {}, p_norm: {}, margin: {}, learning_rate: {}, nbatch: {}, neg_ent: {}".format(
-    DIM, PNORM, MARGIN, LEARNING_RATE, NBATCH, NEG_ENT))
+NBATCH = 100	# 分为多少个batch
+NEG_ENT = 25	# 每个实体负采样数
+
+
+# parameters to screen
+Tools.print_train_parameters(MODEL_NAME, DIM, PNORM, MARGIN, LEARNING_RATE, NBATCH, NEG_ENT)
+
 
 # dataloader for training
 train_dataloader = TrainDataLoader(
-	in_path = DATASET, 
+	in_path = DATAPATH, 
 	nbatches = NBATCH,
 	threads = 8, 
 	sampling_mode = "normal", 
@@ -40,12 +44,12 @@ train_dataloader = TrainDataLoader(
 
 
 # dataloader for test
-test_dataloader = TestDataLoader(DATASET, "link")
+test_dataloader = TestDataLoader(DATAPATH, "link")
 
 
 # get the feature of the entities
 print("Caculate the feature of entities")
-f_train_triples = open("{}/train2id.txt".format(DATASET), 'r')
+f_train_triples = open("{}/train2id.txt".format(DATAPATH), 'r')
 train_triples = f_train_triples.readlines()[1: ]
 for i in range(len(train_triples)):
     train_triples[i] = list(map(int, train_triples[i].split()))
@@ -82,14 +86,14 @@ trainer.run()
 transe_common1.save_checkpoint('./checkpoint/{}/{}.ckpt'.format(MODEL, MODEL_NAME))
 
 
-"""# test the model
+# test the model
 transe_common1.load_checkpoint('./checkpoint/{}/{}.ckpt'.format(MODEL, MODEL_NAME))
 tester = Tester(model = transe_common1, data_loader = test_dataloader, use_gpu = True)
 mrr, mr, hit10, hit3, hit1 = tester.run_link_prediction(type_constrain = False)
 
 
 # draw the loss picture
-Tools.draw(np.arange(0, EPOCH), trainer.loss_history, "Loss history", "Epoch", "Loss", 
+Tools.draw(np.arange(0, EPOCH), trainer.loss_history, MODEL_NAME, DATASET, 
           "./checkpoint/{}/{}.png".format(MODEL, MODEL_NAME))
 
 
@@ -113,18 +117,23 @@ test_record = {
     "Hit3": hit3, 
     "Hit1": hit1
 }
-Tools.write_record(train_record, test_record, record_path)"""
+Tools.write_record(train_record, test_record, record_path)
 
 
 # =================================================================================
 # STEP2
-# store the common_embedding and release GPU memory
+# release GPU memory
 # caculate the transe_with_feature
 # =================================================================================
 MODEL = 'transe_with_feature'
 MODEL_NAME = "{}_{}".format(MODEL, CHECK_TIME)
 
 
+# release GPU memory
+common_head_embeddings = transe_common1.common_head_embeddings.weight.data.cpu()
+common_tail_embeddings = transe_common1.common_tail_embeddings.weight.data.cpu()
+entities_feature_weight = Feature.caculate_feature_weight(entities_feature)
+entities_embedding = Feature.pool_feature(entities_feature_weight, common_head_embeddings, common_tail_embeddings)
 torch.cuda.empty_cache()
 
 
@@ -135,6 +144,7 @@ transe_with_feature = TransE_with_feature(
     entities_feature = entities_feature, 
     common_head_embeddings = common_head_embeddings,
     common_tail_embeddings = common_tail_embeddings, 
+    entities_feature_embedding = entities_embedding,
 	dim = DIM, 
 	p_norm = PNORM, 
 	norm_flag = True)
@@ -161,7 +171,7 @@ mrr, mr, hit10, hit3, hit1 = tester.run_link_prediction(type_constrain = False)
 
 
 # draw the loss picture
-Tools.draw(np.arange(0, EPOCH), trainer.loss_history, "Loss history", "Epoch", "Loss", 
+Tools.draw(np.arange(0, EPOCH), trainer.loss_history, MODEL_NAME, DATASET, 
           "./checkpoint/{}/{}.png".format(MODEL, MODEL_NAME))
 
 
